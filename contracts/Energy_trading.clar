@@ -87,3 +87,70 @@
     )
   )
 )
+
+;; Create an energy listing
+(define-public (create-energy-listing
+  (asset-id uint)
+  (price-per-kwh uint)
+  (available-energy uint)
+)
+  (begin
+    (asserts! (is-owner asset-id) (err u1))
+    (let ((listing-id (+ (var-get next-listing-id) u1)))
+      (map-set energy-listings
+        {
+          listing-id: listing-id,
+          seller: tx-sender
+        }
+        {
+          asset-id: asset-id,
+          price-per-kwh: price-per-kwh,
+          available-energy: available-energy,
+          listing-status: "active"
+        }
+      )
+      (var-set next-listing-id listing-id)
+      (ok listing-id)
+    )
+  )
+)
+
+;; Purchase energy from a listing
+(define-public (purchase-energy
+  (listing-id uint)
+  (energy-amount uint)
+)
+  (begin
+    (let 
+      (
+        (listing-key {
+          listing-id: listing-id, 
+          seller: tx-sender
+        })
+        (listing (unwrap! (map-get? energy-listings listing-key) (err u2)))
+        (total-cost (* (get price-per-kwh listing) energy-amount))
+        (seller (get-seller-from-listing-key listing-key))
+      )
+      (asserts! (<= energy-amount (get available-energy listing)) (err u3))
+      
+      ;; Transfer energy credits from buyer to seller
+      (try! (ft-transfer? energy-credit total-cost tx-sender seller))
+      
+      ;; Update listing
+      (map-set energy-listings
+        listing-key
+        (merge listing {
+          available-energy: (- (get available-energy listing) energy-amount)
+        })
+      )
+      
+      (ok true)
+    )
+  )
+)
+
+;; Helper function to extract seller from listing key
+(define-private (get-seller-from-listing-key (key {listing-id: uint, seller: principal}))
+  (get seller key)
+)
+
